@@ -78,7 +78,8 @@ jobs:
         project: ${{ vars.PROJECT_NAME }}
         name: ${{ vars.APP_NAME }}
         component: 'app'
-        #image: "private.${{ vars.ICR_REGION }}/${{ vars.ICR_NAMESPACE }}/ci-${{ vars.IMAGE_NAME }}:latest"
-        image: "${{ vars.ICR_REGION }}/${{ vars.ICR_NAMESPACE }}/ci-${{ vars.IMAGE_NAME }}:latest"
+        image: "private.${{ vars.ICR_REGION }}/${{ vars.ICR_NAMESPACE }}/ci-${{ vars.IMAGE_NAME }}:latest"
+        #image: "${{ vars.ICR_REGION }}/${{ vars.ICR_NAMESPACE }}/ci-${{ vars.IMAGE_NAME }}:latest"
+        registry-secret: "ce-auto-icr-private-${{ vars.IBMCLOUD_REGION }}"
         cpu: 1
         memory: 4G
