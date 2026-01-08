@@ -24,33 +24,60 @@ env:
   REGISTRY_HOSTNAME: ${{ vars.ICR_REGION }}
   IMAGE_NAME: ${{ vars.IMAGE_NAME }}
   PROJECT_NAME: ${{ vars.PROJECT_NAME }}
+  APP_NAME: ${{ vars.APP_NAME }}
 
 jobs:
-  setup-build-publish-deploy:
-    name: Setup, Test, Build and Deploy
+
+  ci-pipeline:
+    name: CI Pipeline
     runs-on: ubuntu-latest
     environment: production
     steps:
 
-    - id: checkout
-      name: Clone repo
+    - id: checkout-ci-code
+      name: Checkout CI code
       uses: actions/checkout@v4
+
+    - id: detect-secrets
+      name: Detect CI code secrets
+      run: | 
+        echo "Detect CI code secrets <todo>"
   
-    - id: unit-test
-      name: Run Unit tests
+    - id: unit-test-ci-code
+      name: Unit test CI code
       run: |
         npm install
         npm run test-unit
-    
-    - name: Deploy Application to Code Engine
+
+    - id: build-ci-image
+      name: Build CI image using Code Engine
       uses: IBM/code-engine-github-action@v1
       with:
         api-key: ${{ secrets.IBMCLOUD_API_KEY }}
         resource-group: ${{ vars.RESOURCE_GROUP }}
         region: ${{ vars.IBMCLOUD_REGION }}
         project: ${{ vars.PROJECT_NAME }}
-        component: 'app'
-        name: 'my-app'
+        component: 'build'
+        name: 'build-ci-image'
+        image: "private.${{ vars.ICR_REGION }}/${{ vars.ICR_NAMESPACE }}/ci-${{ vars.IMAGE_NAME }}:latest"
+        registry-secret: "ce-auto-icr-private-${{ vars.IBMCLOUD_REGION }}"
         build-source: './'
+
+    - id: scan-icr-ci-image
+      name: Scan ICR CI image
+      run: |
+        echo "Scan ICR CI image with digest: ${{ steps.build-ci-image.outputs.image-with-digest }} <todo>"
+    
+    - id: deploy-ci-app-to-code-engine
+      name: Deploy CI application to Code Engine
+      uses: IBM/code-engine-github-action@v1
+      with:
+        api-key: ${{ secrets.IBMCLOUD_API_KEY }}
+        resource-group: ${{ vars.RESOURCE_GROUP }}
+        region: ${{ vars.IBMCLOUD_REGION }}
+        project: ${{ vars.PROJECT_NAME }}
+        name: ${{ vars.APP_NAME }}
+        component: 'app'
+        image: "private.${{ vars.ICR_REGION }}/${{ vars.ICR_NAMESPACE }}/ci-${{ vars.IMAGE_NAME }}:latest"
         cpu: 1
         memory: 4G
