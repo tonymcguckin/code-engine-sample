@@ -6,7 +6,7 @@
 # 2. Setup secrets in your repository by going to settings: Create ICR_NAMESPACE and IBM_CLOUD_API_KEY
 # 3. Change the values for the IBM_CLOUD_REGION, REGISTRY_HOSTNAME, IMAGE_NAME, IKS_CLUSTER, DEPLOYMENT_NAME, and PORT
 
-name: Build and Test PR
+name: Build and Test PR Code
 
 on:
   workflow_dispatch:
@@ -17,20 +17,34 @@ on:
 # Environment variables available to all jobs and steps in this workflow
 env:
   GITHUB_SHA: ${{ github.sha }}
+  IBMCLOUD_API_KEY: ${{ secrets.IBMCLOUD_API_KEY }}
+  IBMCLOUD_REGION: ${{ vars.IBMCLOUD_REGION }}
+  RESOURCE_GROUP: ${{ vars.RESOURCE_GROUP }}
+  ICR_NAMESPACE: ${{ vars.ICR_NAMESPACE }}
+  ICR_REGION: ${{ vars.ICR_REGION }}
   IMAGE_NAME: ${{ vars.IMAGE_NAME }}
+  PROJECT_NAME: ${{ vars.PROJECT_NAME }}
+  APP_NAME: ${{ vars.APP_NAME }}
+
 jobs:
+
   pr-pipeline:
-    name: Setup, Test, Build
+    name: PR Pipeline
     runs-on: ubuntu-latest
     environment: production
     steps:
 
-    - id: checkout
-      name: Clone repo
+    - id: checkout-pr-code
+      name: Checkout PR code
       uses: actions/checkout@v4
+
+    - id: detect-secrets
+      name: Detect PR code secrets
+      run: | 
+        echo "Detect PR code secrets <todo>"
     
-    - id: set-commit-status-start
-      name: Set up initial commit status
+    - id: set-commit-status-pending
+      name: Set commit status (pending)
       uses: huayuenh/ghacatalog/set-commit-status@main
       with:
         github_token: ${{ github.token }}
@@ -41,22 +55,47 @@ jobs:
         target_url: "https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"
         github_repository: ${{ github.repository }}
 
-    - id: unit-test
-      name: Run Unit tests
+    - id: unit-test-pr-code
+      name: Unit test PR code
       run: |
         npm install
         npm run test-unit
 
-    - id: build-image
-      name: Build image
-      uses: redhat-actions/buildah-build@v2
+    - id: build-pr-image
+      name: Build PR image using Code Engine
+      uses: IBM/code-engine-github-action@v1
       with:
-        image: "${{ vars.ICR_REGION }}/${{ vars.ICR_NAMESPACE }}/${{ vars.IMAGE_NAME }}"
-        tags: "${{ github.sha }}"
-        containerfiles: |
-          ./Dockerfile
+        api-key: ${{ secrets.IBMCLOUD_API_KEY }}
+        resource-group: ${{ vars.RESOURCE_GROUP }}
+        region: ${{ vars.IBMCLOUD_REGION }}
+        project: ${{ vars.PROJECT_NAME }}
+        component: 'build'
+        name: 'build-pr-image'
+        image: "private.${{ vars.ICR_REGION }}/${{ vars.ICR_NAMESPACE }}/pr-${{ vars.IMAGE_NAME }}:latest"
+        registry-secret: "ce-auto-icr-private-${{ vars.IBMCLOUD_REGION }}"
+        build-source: './'
+
+    #- id: build-image
+    #  name: Build image
+    #  uses: redhat-actions/buildah-build@v2
+    #  with:
+    #    image: "${{ vars.ICR_REGION }}/${{ vars.ICR_NAMESPACE }}/${{ vars.IMAGE_NAME }}"
+    #    tags: "${{ github.sha }}"
+    #    containerfiles: |
+    #      ./Dockerfile
+
+    - id: scan-icr-pr-image
+      name: Scan ICR PR image
+      run: |
+        echo "Scan ICR image with digest: ${{ steps.build-pr-image.outputs.image-with-digest }} <todo>"
+
+    - id: remove-icr-pr-image
+      name: Remove ICR PR image
+      run: |
+        echo "Remove ICR image with digest: ${{ steps.build-pr-image.outputs.image-with-digest }} <todo>"
 
     - id: set-commit-status-fail
+      name: Set commit status (fail)
       if: ${{ failure() }}
       uses: huayuenh/ghacatalog/set-commit-status@main
       with:
@@ -69,6 +108,7 @@ jobs:
         github_repository: ${{ github.repository }}
 
     - id: set-commit-status-success
+      name: Set commit status (success)
       if: ${{ success() }}
       uses: huayuenh/ghacatalog/set-commit-status@main
       with:
