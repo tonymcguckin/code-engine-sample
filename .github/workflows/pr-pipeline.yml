@@ -145,8 +145,8 @@ jobs:
         echo "DEBUG: Attempting to inspect image at: $IMAGE_PATH2"
         echo
 
-        ic cr region-set "private.${ICR_REGION}"
-        ic cr login
+        ibmcloud cr region-set "private.${ICR_REGION}"
+        ibmcloud cr login
         
         # Get the digest with error handling
         if DIGEST=$(ibmcloud cr image-inspect $IMAGE_PATH --format '{{.RepoDigests}}' 2>&1); then
