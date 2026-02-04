@@ -115,17 +115,20 @@ jobs:
         registry-secret: "ce-auto-icr-private-${{ vars.IBMCLOUD_REGION }}"  # Auto-generated registry secret
         build-source: './'                                          # Build context (current directory)
 
+    # Step 6: Login to IBM Cloud CLI
+    # Authenticates with IBM Cloud and installs Container Registry plugin
+    # Required for subsequent image scanning and cleanup operations
     - id: login-ibmcloud-cli
       name: Login IBM Cloud CLI
       uses: IBM/actions-ibmcloud-cli@v1
       if: ${{ success() }}
       with:
-        api_key: ${{ secrets.IBMCLOUD_API_KEY }} 
-        region: ${{ vars.IBMCLOUD_REGION }} 
-        group: ${{ vars.RESOURCE_GROUP }} 
-        plugins: "container-registry"
+        api_key: ${{ secrets.IBMCLOUD_API_KEY }}                # IBM Cloud API key for authentication
+        region: ${{ vars.IBMCLOUD_REGION }}                     # IBM Cloud region
+        group: ${{ vars.RESOURCE_GROUP }}                       # IBM Cloud resource group
+        plugins: "container-registry"                           # Install Container Registry plugin
 
-    # Step 6: Scan container image for vulnerabilities
+    # Step 7: Scan container image for vulnerabilities
     # Uses IBM Cloud Container Registry Vulnerability Advisor to scan for security issues
     # Checks for known CVEs, malware, and configuration issues
     # Waits for scan completion and displays results
@@ -183,7 +186,7 @@ jobs:
         #   exit 1
         # fi
 
-    # Step 7: Clean up temporary PR image from registry
+    # Step 8: Clean up temporary PR image from registry
     # Removes the temporary PR image from IBM Cloud Container Registry
     # Uses the digest to ensure we delete the exact image that was built
     # Checks for image existence before attempting removal
@@ -213,9 +216,10 @@ jobs:
           echo "This may occur if the image was already deleted or the build failed."
         fi
 
-    # Step 8a: Set GitHub commit status to "failure" if any step failed
+    # Step 9a: Set GitHub commit status to "failure" if any step failed
     # Only runs if previous steps failed (if: failure() condition)
     # Updates PR status in GitHub UI to show checks failed
+    # Provides link to workflow run for debugging
     - id: set-commit-status-fail
       name: Set commit status (fail)
       if: ${{ failure() }}  # Only runs if any previous step failed
@@ -229,7 +233,7 @@ jobs:
         target_url: "https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"  # Link to failed run
         github_repository: ${{ github.repository }}                    # Repository in owner/repo format
 
-    # Step 8b: Set GitHub commit status to "success" if all steps passed
+    # Step 9b: Set GitHub commit status to "success" if all steps passed
     # Only runs if all previous steps succeeded (if: success() condition)
     # Updates PR status in GitHub UI to show checks passed
     # Allows PR to be merged (if branch protection rules require this check)
