@@ -145,6 +145,14 @@ jobs:
 
         ibmcloud cr region-set "${ICR_REGION}"
         ibmcloud cr login
+        ibmcloud cr info
+        ibmcloud cr images
+
+        echo
+
+        ibmcloud cr image-inspect $IMAGE_PATH
+
+        echo
         
         # Get the digest with error handling
         if DIGEST=$(ibmcloud cr image-inspect $IMAGE_PATH --format '{{.RepoDigests}}' 2>&1); then
