@@ -146,7 +146,7 @@ jobs:
         ibmcloud cr region-set "${ICR_REGION}"
         ibmcloud cr login
         ibmcloud cr info
-        ibmcloud cr images
+        #ibmcloud cr images
 
         echo
 
@@ -155,7 +155,7 @@ jobs:
         echo
         
         # Get the digest with error handling
-        if DIGEST=$(ibmcloud cr image-inspect $IMAGE_PATH --format '{{.Id}}' 2>&1); then
+        if DIGEST=$(ibmcloud cr image-inspect $IMAGE_PATH --format '{{ .ID }}' 2>&1); then
           echo "DEBUG: Raw output from image-inspect: $DIGEST"
           DIGEST=$(echo "$DIGEST" | grep -oP 'sha256:[a-f0-9]{64}' || echo "")
           if [ -z "$DIGEST" ]; then
