@@ -1,121 +1,183 @@
-# This workflow will build a docker container, publish it to IBM Container Registry, and deploy it to IKS when there is a push to the "main" branch.
+# ============================================================================
+# PR Pipeline - Validate Pull Requests
+# ============================================================================
+# This workflow validates pull requests by running tests and building the
+# container image WITHOUT deploying to Code Engine. It provides automated
+# feedback on PR quality and build status.
 #
-# To configure this workflow:
-#
-# 1. Ensure that your repository contains a Dockerfile
-# 2. Setup secrets in your repository by going to settings: Create ICR_NAMESPACE and IBM_CLOUD_API_KEY
-# 3. Change the values for the IBM_CLOUD_REGION, REGISTRY_HOSTNAME, IMAGE_NAME, IKS_CLUSTER, DEPLOYMENT_NAME, and PORT
+# Prerequisites:
+# 1. Dockerfile in repository root
+# 2. GitHub Secrets configured: IBMCLOUD_API_KEY
+# 3. GitHub Variables configured: IBMCLOUD_REGION, ICR_REGION, ICR_NAMESPACE,
+#    RESOURCE_GROUP, PROJECT_NAME, APP_NAME, IMAGE_NAME
+# 4. Code Engine project and ICR namespace created in IBM Cloud
+# ============================================================================
 
 name: Build and Test PR Code
 
+# Trigger this workflow when PRs are opened/reopened or via manual dispatch
 on:
-  workflow_dispatch:
-    branches: [ main ]
+  workflow_dispatch:  # Allows manual triggering from GitHub Actions UI
   pull_request:
-    types: [opened, reopened]
+    types: [opened, reopened]  # Runs when PR is opened or reopened
 
 # Environment variables available to all jobs and steps in this workflow
 env:
-  GITHUB_SHA: ${{ github.sha }}
-  IBMCLOUD_API_KEY: ${{ secrets.IBMCLOUD_API_KEY }}
-  IBMCLOUD_REGION: ${{ vars.IBMCLOUD_REGION }}
-  RESOURCE_GROUP: ${{ vars.RESOURCE_GROUP }}
-  ICR_NAMESPACE: ${{ vars.ICR_NAMESPACE }}
-  ICR_REGION: ${{ vars.ICR_REGION }}
-  IMAGE_NAME: ${{ vars.IMAGE_NAME }}
-  PROJECT_NAME: ${{ vars.PROJECT_NAME }}
-  APP_NAME: ${{ vars.APP_NAME }}
+  GITHUB_SHA: ${{ github.sha }}                      # Git commit SHA for traceability
+  IBMCLOUD_API_KEY: ${{ secrets.IBMCLOUD_API_KEY }}  # IBM Cloud authentication
+  IBMCLOUD_REGION: ${{ vars.IBMCLOUD_REGION }}       # IBM Cloud region (e.g., us-south)
+  RESOURCE_GROUP: ${{ vars.RESOURCE_GROUP }}         # IBM Cloud resource group
+  ICR_NAMESPACE: ${{ vars.ICR_NAMESPACE }}           # Container Registry namespace
+  ICR_REGION: ${{ vars.ICR_REGION }}                 # ICR hostname (e.g., us.icr.io)
+  IMAGE_NAME: ${{ vars.IMAGE_NAME }}                 # Base container image name
+  PROJECT_NAME: ${{ vars.PROJECT_NAME }}             # Code Engine project name
+  APP_NAME: ${{ vars.APP_NAME }}                     # Code Engine application name
 
 jobs:
 
+  # Main PR validation job - tests and builds but does NOT deploy
   pr-pipeline:
     name: PR Pipeline
-    runs-on: ubuntu-latest
-    environment: production
+    runs-on: ubuntu-latest      # Use latest Ubuntu runner
+    environment: production     # Uses production environment settings
     steps:
 
+    # Step 1: Check PR size to encourage smaller, reviewable PRs
+    # Fails if PR has more than 500 lines of changes
+    # Helps maintain code review quality and reduces merge conflicts
+    - id: check-pr-size
+      name: Check PR size
+      uses: actions/github-script@v6  # Uses GitHub's script action for API access
+      with:
+        script: |
+          // Fetch all files changed in this PR
+          const { data: files } = await github.rest.pulls.listFiles({
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            pull_number: context.issue.number
+          });
+          // Calculate total lines changed (additions + deletions)
+          const totalChanges = files.reduce((acc, file) => acc + file.changes, 0);
+          // Fail if PR is too large (>500 lines)
+          if (totalChanges > 500) {
+            core.setFailed('PR is too large (>500 lines). Please split into smaller PRs.');
+          }
+
+    # Step 2: Checkout the PR branch code
+    # Uses GitHub's official checkout action to clone the PR branch
     - id: checkout-pr-code
       name: Checkout PR code
       uses: actions/checkout@v4
-
-    - id: detect-secrets
-      name: Detect PR code secrets
-      run: | 
-        echo "Detect PR code secrets <todo>"
+      if: ${{ success() }}
     
+    # Step 3: Set GitHub commit status to "pending"
+    # Updates the PR's commit status in GitHub UI to show checks are running
+    # Provides a link to the workflow run for detailed logs
     - id: set-commit-status-pending
       name: Set commit status (pending)
-      uses: huayuenh/ghacatalog/set-commit-status@main
+      uses: huayuenh/ghacatalog/set-commit-status@main  # Third-party action for status updates
+      if: ${{ success() }}
       with:
-        github_token: ${{ github.token }}
-        state: "pending"
-        description: "Running"
-        context: "PR Pipeline"
-        sha: ${{ github.sha }}
-        target_url: "https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"
-        github_repository: ${{ github.repository }}
+        github_token: ${{ github.token }}                              # GitHub token for API access
+        state: "pending"                                               # Status: pending, success, or failure
+        description: "Running"                                         # Short description shown in PR
+        context: "PR Pipeline"                                         # Name of the check in GitHub UI
+        sha: ${{ github.sha }}                                         # Commit SHA to update
+        target_url: "https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"  # Link to workflow run
+        github_repository: ${{ github.repository }}                    # Repository in owner/repo format
 
+    # Step 4: Run unit tests on PR code
+    # Installs dependencies and executes unit tests to validate code changes
+    # Fails the workflow if tests don't pass, preventing merge of broken code
     - id: unit-test-pr-code
       name: Unit test PR code
+      if: ${{ success() }}
       run: |
-        npm install
-        npm run test-unit
+        npm install          # Install all npm dependencies
+        npm run test-unit    # Run unit tests (must be defined in package.json)
 
+    # Step 5: Build container image using Code Engine
+    # Validates that the PR code can be successfully containerized
+    # Image is tagged with "pr-" prefix to distinguish from CI builds
+    # This is a temporary image that will be cleaned up after validation
     - id: build-pr-image
       name: Build PR image using Code Engine
       uses: IBM/code-engine-github-action@v1
+      if: ${{ success() }}
       with:
-        api-key: ${{ secrets.IBMCLOUD_API_KEY }}
-        resource-group: ${{ vars.RESOURCE_GROUP }}
-        region: ${{ vars.IBMCLOUD_REGION }}
-        project: ${{ vars.PROJECT_NAME }}
-        component: 'build'
-        name: 'build-pr-image'
-        image: "private.${{ vars.ICR_REGION }}/${{ vars.ICR_NAMESPACE }}/pr-${{ vars.IMAGE_NAME }}:latest"
-        registry-secret: "ce-auto-icr-private-${{ vars.IBMCLOUD_REGION }}"
-        build-source: './'
+        api-key: ${{ secrets.IBMCLOUD_API_KEY }}                    # IBM Cloud API key for authentication
+        resource-group: ${{ vars.RESOURCE_GROUP }}                  # Target resource group
+        region: ${{ vars.IBMCLOUD_REGION }}                         # IBM Cloud region
+        project: ${{ vars.PROJECT_NAME }}                           # Code Engine project name
+        component: 'build'                                          # Specifies this is a build operation
+        name: 'build-pr-image'                                      # Name for the build configuration
+        image: "private.${{ vars.ICR_REGION }}/${{ vars.ICR_NAMESPACE }}/pr-${{ vars.IMAGE_NAME }}:${{ github.sha }}"  # PR image path
+        registry-secret: "ce-auto-icr-private-${{ vars.IBMCLOUD_REGION }}"  # Auto-generated registry secret
+        build-source: './'                                          # Build context (current directory)
 
-    #- id: build-image
-    #  name: Build image
-    #  uses: redhat-actions/buildah-build@v2
-    #  with:
-    #    image: "${{ vars.ICR_REGION }}/${{ vars.ICR_NAMESPACE }}/${{ vars.IMAGE_NAME }}"
-    #    tags: "${{ github.sha }}"
-    #    containerfiles: |
-    #      ./Dockerfile
+    - id: login-ibmcloud-cli
+      name: Login IBM Cloud CLI
+      uses: IBM/actions-ibmcloud-cli@v1
+      if: ${{ success() }}
+      with:
+        api_key: ${{ secrets.IBMCLOUD_API_KEY }} 
+        region: ${{ vars.IBMCLOUD_REGION }} 
+        group: ${{ vars.RESOURCE_GROUP }} 
+        plugins: "container-registry"
 
+    # Step 6: Scan container image for vulnerabilities
+    # TODO: Implement actual vulnerability scanning (e.g., Trivy, IBM Vulnerability Advisor)
+    # Should check for known CVEs, malware, and security issues
+    # Currently a placeholder that outputs the image digest
     - id: scan-icr-pr-image
       name: Scan ICR PR image
+      if: ${{ success() }}
       run: |
         echo "Scan ICR image with digest: ${{ steps.build-pr-image.outputs.image-with-digest }} <todo>"
 
+        IMAGE_PATH="private.${{ vars.ICR_REGION }}/${{ vars.ICR_NAMESPACE }}/pr-${{ vars.IMAGE_NAME }}:${{ github.sha }}"
+        DIGEST=$(ibmcloud cr image-inspect $IMAGE_PATH --format '{{.RepoDigests}}' | grep -oP 'sha256:[a-f0-9]{64}')
+        echo "Newly built PR image path: $IMAGE_PATH"
+        echo "Newly built PR image digest: $DIGEST"
+
+    # Step 7: Clean up temporary PR image from registry
+    # TODO: Implement actual image removal to save registry space and costs
+    # Should use IBM Cloud CLI or API to delete the temporary PR image
+    # Important for keeping registry clean and reducing storage costs
     - id: remove-icr-pr-image
       name: Remove ICR PR image
       run: |
         echo "Remove ICR image with digest: ${{ steps.build-pr-image.outputs.image-with-digest }} <todo>"
 
+    # Step 8a: Set GitHub commit status to "failure" if any step failed
+    # Only runs if previous steps failed (if: failure() condition)
+    # Updates PR status in GitHub UI to show checks failed
     - id: set-commit-status-fail
       name: Set commit status (fail)
-      if: ${{ failure() }}
+      if: ${{ failure() }}  # Only runs if any previous step failed
       uses: huayuenh/ghacatalog/set-commit-status@main
       with:
-        github_token: ${{ github.token }}
-        state: "failure"
-        description: "Complete - Failure"
-        context: "PR Pipeline"
-        sha: ${{ github.sha }}
-        target_url: "https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"
-        github_repository: ${{ github.repository }}
+        github_token: ${{ github.token }}                              # GitHub token for API access
+        state: "failure"                                               # Status: failure
+        description: "Complete - Failure"                              # Description shown in PR
+        context: "PR Pipeline"                                         # Name of the check in GitHub UI
+        sha: ${{ github.sha }}                                         # Commit SHA to update
+        target_url: "https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"  # Link to failed run
+        github_repository: ${{ github.repository }}                    # Repository in owner/repo format
 
+    # Step 8b: Set GitHub commit status to "success" if all steps passed
+    # Only runs if all previous steps succeeded (if: success() condition)
+    # Updates PR status in GitHub UI to show checks passed
+    # Allows PR to be merged (if branch protection rules require this check)
     - id: set-commit-status-success
       name: Set commit status (success)
-      if: ${{ success() }}
+      if: ${{ success() }}  # Only runs if all previous steps succeeded
       uses: huayuenh/ghacatalog/set-commit-status@main
       with:
-        github_token: ${{ github.token }}
-        state: "success"
-        description: "Complete - Success"
-        context: "PR Pipeline"
-        sha: ${{ github.sha }}
-        target_url: "https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"
-        github_repository: ${{ github.repository }}
+        github_token: ${{ github.token }}                              # GitHub token for API access
+        state: "success"                                               # Status: success
+        description: "Complete - Success"                              # Description shown in PR
+        context: "PR Pipeline"                                         # Name of the check in GitHub UI
+        sha: ${{ github.sha }}                                         # Commit SHA to update
+        target_url: "https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"  # Link to successful run
+        github_repository: ${{ github.repository }}                    # Repository in owner/repo format
