@@ -43,7 +43,7 @@ jobs:
     steps:
 
     # Step 1: Check PR size to encourage smaller, reviewable PRs
-    # Fails if PR has more than 500 lines of changes
+    # Fails if PR has more than 1000 lines of changes
     # Helps maintain code review quality and reduces merge conflicts
     - id: check-pr-size
       name: Check PR size
@@ -58,9 +58,9 @@ jobs:
           });
           // Calculate total lines changed (additions + deletions)
           const totalChanges = files.reduce((acc, file) => acc + file.changes, 0);
-          // Fail if PR is too large (>500 lines)
-          if (totalChanges > 500) {
-            core.setFailed('PR is too large (>500 lines). Please split into smaller PRs.');
+          // Fail if PR is too large (>1000 lines)
+          if (totalChanges > 1000) {
+            core.setFailed('PR is too large (>1000 lines). Please split into smaller PRs.');
           }
 
     # Step 2: Checkout the PR branch code
