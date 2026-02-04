@@ -12,8 +12,10 @@ This project showcases a complete CI/CD pipeline that automatically builds, test
 - 🐳 Docker container build using Code Engine build service
 - 📦 Image storage in IBM Container Registry (ICR)
 - ✅ Automated unit testing
-- 🔒 Secret detection (placeholder for implementation)
-- 🔍 Container image scanning (placeholder for implementation)
+- 🔍 Container vulnerability scanning with IBM Vulnerability Advisor
+- 🧹 Automatic cleanup of temporary PR images
+- 📊 PR size validation to encourage reviewable changes
+- ✅ Automated commit status updates in GitHub PRs
 
 ## Prerequisites
 
@@ -71,20 +73,24 @@ The PR pipeline validates pull requests before they are merged to ensure code qu
 - Manual trigger via GitHub Actions UI (workflow_dispatch)
 
 **Steps:**
-1. **Checkout PR Code** - Retrieves the PR branch code
-2. **Detect Secrets** - Scans for exposed secrets (to be implemented)
+1. **Check PR Size** - Validates PR has fewer than 1000 lines of changes to encourage reviewable PRs
+2. **Checkout PR Code** - Retrieves the PR branch code
 3. **Set Commit Status (Pending)** - Updates GitHub PR status to "pending"
 4. **Unit Tests** - Runs `npm run test-unit` to validate code changes
-5. **Build PR Image** - Builds Docker image using Code Engine and pushes to ICR as `pr-{image-name}:latest`
-6. **Scan Image** - Performs vulnerability scanning (to be implemented)
-7. **Remove PR Image** - Cleans up the temporary PR image from ICR (to be implemented)
-8. **Set Commit Status** - Updates GitHub PR status to "success" or "failure"
+5. **Build PR Image** - Builds Docker image using Code Engine and pushes to ICR with commit SHA tag
+6. **Login IBM Cloud CLI** - Authenticates with IBM Cloud and installs Container Registry plugin
+7. **Scan Image** - Performs vulnerability scanning using IBM Vulnerability Advisor, waits for results
+8. **Remove PR Image** - Cleans up the temporary PR image from ICR with existence check
+9. **Set Commit Status** - Updates GitHub PR status to "success" or "failure"
 
 **Key Features:**
 - ✅ Automatic PR status updates visible in GitHub UI
-- 🧹 Temporary image cleanup to save registry space
+- 🔍 Real vulnerability scanning with IBM Vulnerability Advisor
+- 🧹 Automatic cleanup of temporary images to save registry space
+- 📏 PR size validation to maintain code review quality
 - 🚫 Does NOT deploy to Code Engine (validation only)
 - 📊 Links to workflow run for detailed logs
+- ⏱️ Waits for scan completion (up to 5 minutes) before proceeding
 
 ### CI Pipeline (`.github/workflows/ci-pipeline.yml`)
 
@@ -96,16 +102,21 @@ The CI pipeline builds, tests, and deploys the application to Code Engine when c
 
 **Steps:**
 1. **Checkout Code** - Retrieves the latest code from the repository
-2. **Detect Secrets** - Scans for exposed secrets (to be implemented)
-3. **Unit Tests** - Runs `npm run test-unit` to validate code
-4. **Build Image** - Builds Docker image using Code Engine and pushes to ICR as `ci-{image-name}:latest`
-5. **Scan Image** - Performs vulnerability scanning (to be implemented)
-6. **Deploy** - Deploys the application to Code Engine with 1 CPU and 4GB memory
+2. **Unit Tests** - Runs `npm run test-unit` to validate code
+3. **Login IBM Cloud CLI** - Authenticates with IBM Cloud and installs required plugins
+4. **Get Currently Deployed Image** - Retrieves the digest of the currently deployed image for rollback capability
+5. **Build Image** - Builds Docker image using Code Engine and pushes to ICR as `ci-{image-name}:latest`
+6. **Scan Image** - Performs vulnerability scanning (placeholder for implementation)
+7. **Deploy** - Deploys the application to Code Engine with 1 CPU and 4GB memory
+8. **Run Integration Tests** - Executes integration tests against deployed application (placeholder)
+9. **Rollback on Failure** - Automatically rolls back to previous image if deployment fails
 
 **Key Features:**
 - 🚀 Automatic deployment to production Code Engine environment
 - 📦 Persistent image in ICR for rollback capability
 - ⚡ Fast deployment using Code Engine's serverless platform
+- 🔄 Automatic rollback on failure to maintain service availability
+- 🧪 Integration testing against live deployment
 
 ## Application Configuration
 
@@ -152,11 +163,16 @@ docker build -t code-engine-sample .
 ## Future Enhancements
 
 - [ ] Implement secret detection scanning
-- [ ] Add container vulnerability scanning
-- [ ] Add integration tests
+- [x] Add container vulnerability scanning (implemented with IBM Vulnerability Advisor)
+- [x] Implement PR image cleanup (implemented with existence check)
+- [x] Add PR size validation (implemented with 1000 line limit)
+- [ ] Complete integration tests implementation
+- [ ] Add CI pipeline vulnerability scanning
 - [ ] Implement blue-green deployment strategy
 - [ ] Add monitoring and alerting
 - [ ] Configure custom domain
+- [ ] Add automated rollback testing
+- [ ] Implement deployment notifications (Slack, email, etc.)
 
 ## Resources
 
