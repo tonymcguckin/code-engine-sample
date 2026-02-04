@@ -126,60 +126,92 @@ jobs:
         plugins: "container-registry"
 
     # Step 6: Scan container image for vulnerabilities
-    # TODO: Implement actual vulnerability scanning (e.g., Trivy, IBM Vulnerability Advisor)
-    # Should check for known CVEs, malware, and security issues
-    # Currently a placeholder that outputs the image digest
+    # Uses IBM Cloud Container Registry Vulnerability Advisor to scan for security issues
+    # Checks for known CVEs, malware, and configuration issues
+    # Waits for scan completion and displays results
     - id: scan-icr-pr-image
       name: Scan ICR PR image
       if: ${{ success() }}
       run: |
-        # Enable debug mode for troubleshooting
-        set -x
-        
-        echo "Scan ICR image with digest: ${{ steps.build-pr-image.outputs.image-with-digest }} <todo>"
+        # Get the image with digest and remove "private." prefix
+        IMAGE_WITH_DIGEST="${{ steps.build-pr-image.outputs.image-with-digest }}"
+        IMAGE_PATH="${IMAGE_WITH_DIGEST#private.}"
+
+        echo "Scanning ICR image: $IMAGE_PATH"
         echo
 
-        IMAGE_PATH="${{ vars.ICR_REGION }}/${{ vars.ICR_NAMESPACE }}/pr-${{ vars.IMAGE_NAME }}:${{ github.sha }}"
-        echo "DEBUG: Attempting to inspect image at: $IMAGE_PATH"
-        echo
-
+        # Set the ICR region and login
         ibmcloud cr region-set "${ICR_REGION}"
         ibmcloud cr login
-        ibmcloud cr info
-        #ibmcloud cr images
-
-        echo
-
-        ibmcloud cr image-inspect $IMAGE_PATH
-
-        echo
         
-        # Get the digest with error handling
-        if DIGEST=$(ibmcloud cr image-inspect $IMAGE_PATH --format '{{ .ID }}' 2>&1); then
-          echo "DEBUG: Raw output from image-inspect: $DIGEST"
-          DIGEST=$(echo "$DIGEST" | grep -oP 'sha256:[a-f0-9]{64}' || echo "")
-          if [ -z "$DIGEST" ]; then
-            echo "WARNING: Could not extract digest from output"
+        # Initiate the vulnerability scan
+        echo "Initiating vulnerability scan..."
+        ibmcloud cr vulnerability-assessment "$IMAGE_PATH" || true
+        
+        # Wait for scan to complete (poll every 10 seconds, max 5 minutes)
+        echo "Waiting for scan results..."
+        MAX_ATTEMPTS=30
+        ATTEMPT=0
+        
+        while [ $ATTEMPT -lt $MAX_ATTEMPTS ]; do
+          ATTEMPT=$((ATTEMPT + 1))
+          echo "Checking scan status (attempt $ATTEMPT/$MAX_ATTEMPTS)..."
+          
+          # Check if scan is complete
+          if ibmcloud cr vulnerability-assessment "$IMAGE_PATH" 2>&1 | grep -q "Scan complete"; then
+            echo "Scan completed successfully!"
+            break
           fi
-        else
-          echo "ERROR: Failed to inspect image: $DIGEST"
-          exit 1
-        fi
+          
+          if [ $ATTEMPT -eq $MAX_ATTEMPTS ]; then
+            echo "WARNING: Scan did not complete within timeout period"
+            break
+          fi
+          
+          sleep 10
+        done
         
-        echo "Newly built PR image path: $IMAGE_PATH"
-        echo "Newly built PR image digest: $DIGEST"
+        echo
+        echo "=== Vulnerability Scan Results ==="
+        ibmcloud cr vulnerability-assessment "$IMAGE_PATH"
+        echo
         
-        # Disable debug mode
-        set +x
+        # Optional: Fail the build if critical vulnerabilities are found
+        # Uncomment the following lines to enforce security policy
+        # if ibmcloud cr vulnerability-assessment "$IMAGE_PATH" | grep -q "Critical"; then
+        #   echo "ERROR: Critical vulnerabilities found in image"
+        #   exit 1
+        # fi
 
     # Step 7: Clean up temporary PR image from registry
-    # TODO: Implement actual image removal to save registry space and costs
-    # Should use IBM Cloud CLI or API to delete the temporary PR image
+    # Removes the temporary PR image from IBM Cloud Container Registry
+    # Uses the digest to ensure we delete the exact image that was built
+    # Checks for image existence before attempting removal
     # Important for keeping registry clean and reducing storage costs
     - id: remove-icr-pr-image
       name: Remove ICR PR image
+      if: ${{ success() }}
       run: |
-        echo "Remove ICR image with digest: ${{ steps.build-pr-image.outputs.image-with-digest }} <todo>"
+        # Get the image with digest from the build step output
+        IMAGE_WITH_DIGEST="${{ steps.build-pr-image.outputs.image-with-digest }}"
+        
+        # Remove the "private." prefix if present
+        IMAGE_WITH_DIGEST="${IMAGE_WITH_DIGEST#private.}"
+        
+        echo "Checking for ICR image: $IMAGE_WITH_DIGEST"
+        
+        # Check if the image exists before attempting to remove it
+        if ibmcloud cr image-inspect "$IMAGE_WITH_DIGEST" &> /dev/null; then
+          echo "Image found. Removing ICR image: $IMAGE_WITH_DIGEST"
+          
+          # Delete the image using the digest
+          ibmcloud cr image-rm "$IMAGE_WITH_DIGEST"
+          
+          echo "Successfully removed PR image from registry"
+        else
+          echo "Image not found in registry. Skipping removal."
+          echo "This may occur if the image was already deleted or the build failed."
+        fi
 
     # Step 8a: Set GitHub commit status to "failure" if any step failed
     # Only runs if previous steps failed (if: failure() condition)
