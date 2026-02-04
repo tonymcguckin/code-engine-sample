@@ -133,12 +133,31 @@ jobs:
       name: Scan ICR PR image
       if: ${{ success() }}
       run: |
+        # Enable debug mode for troubleshooting
+        set -x
+        
         echo "Scan ICR image with digest: ${{ steps.build-pr-image.outputs.image-with-digest }} <todo>"
 
         IMAGE_PATH="private.${{ vars.ICR_REGION }}/${{ vars.ICR_NAMESPACE }}/pr-${{ vars.IMAGE_NAME }}:${{ github.sha }}"
-        DIGEST=$(ibmcloud cr image-inspect $IMAGE_PATH --format '{{.RepoDigests}}' | grep -oP 'sha256:[a-f0-9]{64}')
+        echo "DEBUG: Attempting to inspect image at: $IMAGE_PATH"
+        
+        # Get the digest with error handling
+        if DIGEST=$(ibmcloud cr image-inspect $IMAGE_PATH --format '{{.RepoDigests}}' 2>&1); then
+          echo "DEBUG: Raw output from image-inspect: $DIGEST"
+          DIGEST=$(echo "$DIGEST" | grep -oP 'sha256:[a-f0-9]{64}' || echo "")
+          if [ -z "$DIGEST" ]; then
+            echo "WARNING: Could not extract digest from output"
+          fi
+        else
+          echo "ERROR: Failed to inspect image: $DIGEST"
+          exit 1
+        fi
+        
         echo "Newly built PR image path: $IMAGE_PATH"
         echo "Newly built PR image digest: $DIGEST"
+        
+        # Disable debug mode
+        set +x
 
     # Step 7: Clean up temporary PR image from registry
     # TODO: Implement actual image removal to save registry space and costs
