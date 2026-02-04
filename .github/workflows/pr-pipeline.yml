@@ -139,13 +139,11 @@ jobs:
         echo "Scan ICR image with digest: ${{ steps.build-pr-image.outputs.image-with-digest }} <todo>"
         echo
 
-        IMAGE_PATH="private.${{ vars.ICR_REGION }}/${{ vars.ICR_NAMESPACE }}/pr-${{ vars.IMAGE_NAME }}:${{ github.sha }}"
-        IMAGE_PATH2="${{ steps.build-pr-image.outputs.image-with-digest }}"
+        IMAGE_PATH="${{ vars.ICR_REGION }}/${{ vars.ICR_NAMESPACE }}/pr-${{ vars.IMAGE_NAME }}:${{ github.sha }}"
         echo "DEBUG: Attempting to inspect image at: $IMAGE_PATH"
-        echo "DEBUG: Attempting to inspect image at: $IMAGE_PATH2"
         echo
 
-        ibmcloud cr region-set "private.${ICR_REGION}"
+        ibmcloud cr region-set "${ICR_REGION}"
         ibmcloud cr login
         
         # Get the digest with error handling
