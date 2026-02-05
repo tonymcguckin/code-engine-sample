@@ -43,23 +43,23 @@ jobs:
     environment: production     # Uses production environment settings
     steps:
 
-    # Step 1: Check PR size to encourage smaller, reviewable PRs
+    # Step 1: Checkout the PR branch code
+    # Uses GitHub's official checkout action to clone the PR branch
+    - id: checkout-pr-code
+      name: Checkout PR code
+      uses: actions/checkout@v4
+
+    # Step 2: Check PR size to encourage smaller, reviewable PRs
     # Uses custom composite action to validate PR size
     # Fails if PR has more than MAX_PR_LINES lines of changes (default: 1000)
     # Helps maintain code review quality and reduces merge conflicts
     - id: check-pr-size
       name: Check PR size
       uses: ./.github/actions/check-pr-size
+      if: ${{ success() }}
       with:
         max_lines: ${{ env.MAX_PR_LINES }}
         github_token: ${{ github.token }}
-
-    # Step 2: Checkout the PR branch code
-    # Uses GitHub's official checkout action to clone the PR branch
-    - id: checkout-pr-code
-      name: Checkout PR code
-      uses: actions/checkout@v4
-      if: ${{ success() }}
     
     # Step 3: Set GitHub commit status to "pending"
     # Updates the PR's commit status in GitHub UI to show checks are running

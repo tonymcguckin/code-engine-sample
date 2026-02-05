@@ -4,11 +4,11 @@ This diagram illustrates the complete flow of the PR validation pipeline.
 
 ```mermaid
 flowchart TD
-    Start([PR Opened/Reopened]) --> CheckSize[Step 1: Check PR Size]
-    CheckSize -->|Lines > MAX_PR_LINES| Fail1[❌ Fail: PR Too Large]
-    CheckSize -->|Lines ≤ MAX_PR_LINES| Checkout[Step 2: Checkout PR Code]
+    Start([PR Opened/Reopened]) --> Checkout[Step 1: Checkout PR Code]
     
-    Checkout --> SetPending[Step 3: Set Commit Status<br/>pending]
+    Checkout --> CheckSize[Step 2: Check PR Size]
+    CheckSize -->|Lines > MAX_PR_LINES| Fail1[❌ Fail: PR Too Large]
+    CheckSize -->|Lines ≤ MAX_PR_LINES| SetPending[Step 3: Set Commit Status<br/>pending]
     SetPending --> UnitTest[Step 4: Unit Test PR Code]
     
     UnitTest -->|Tests Fail| SetFail[Step 9a: Set Commit Status<br/>failure]
@@ -51,8 +51,8 @@ flowchart TD
 
 | Step | Name | Purpose | On Failure |
 |------|------|---------|------------|
-| 1 | Check PR Size | Validates PR has ≤ MAX_PR_LINES changes (default: 1000) | Fails immediately |
-| 2 | Checkout PR Code | Retrieves PR branch code | Fails pipeline |
+| 1 | Checkout PR Code | Retrieves PR branch code | Fails pipeline |
+| 2 | Check PR Size | Validates PR has ≤ MAX_PR_LINES changes (default: 1000) | Fails immediately |
 | 3 | Set Commit Status (Pending) | Updates GitHub PR status to "pending" | Fails pipeline |
 | 4 | Unit Test PR Code | Runs npm test-unit | Fails pipeline |
 | 5 | Build PR Image | Builds Docker image with Code Engine | Fails pipeline |

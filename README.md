@@ -102,8 +102,8 @@ The PR pipeline validates pull requests before they are merged to ensure code qu
 - Manual trigger via GitHub Actions UI (workflow_dispatch)
 
 **Steps:**
-1. **Check PR Size** - Validates PR has fewer than MAX_PR_LINES (default: 1000) lines of changes to encourage reviewable PRs
-2. **Checkout PR Code** - Retrieves the PR branch code
+1. **Checkout PR Code** - Retrieves the PR branch code
+2. **Check PR Size** - Validates PR has fewer than MAX_PR_LINES (default: 1000) lines of changes to encourage reviewable PRs
 3. **Set Commit Status (Pending)** - Updates GitHub PR status to "pending"
 4. **Unit Tests** - Runs `npm run test-unit` to validate code changes
 5. **Build PR Image** - Builds Docker image using Code Engine and pushes to ICR with commit SHA tag
