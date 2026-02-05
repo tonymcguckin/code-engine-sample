@@ -1,0 +1,67 @@
+name: Check PR Size
+description: Validates that a pull request does not exceed a specified number of lines changed
+author: Your Organization
+
+inputs:
+  max_lines:
+    description: 'Maximum number of lines allowed in the PR (additions + deletions)'
+    required: false
+    default: '1000'
+  github_token:
+    description: 'GitHub token for API access'
+    required: true
+
+outputs:
+  total_changes:
+    description: 'Total number of lines changed in the PR'
+    value: ${{ steps.check-size.outputs.total_changes }}
+  is_valid:
+    description: 'Whether the PR size is within limits (true/false)'
+    value: ${{ steps.check-size.outputs.is_valid }}
+
+runs:
+  using: 'composite'
+  steps:
+    - id: check-size
+      name: Validate PR size
+      uses: actions/github-script@v7
+      env:
+        MAX_LINES: ${{ inputs.max_lines }}
+      with:
+        github-token: ${{ inputs.github_token }}
+        script: |
+          // Fetch all files changed in this PR
+          const { data: files } = await github.rest.pulls.listFiles({
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            pull_number: context.issue.number
+          });
+          
+          // Calculate total lines changed (additions + deletions)
+          const totalChanges = files.reduce((acc, file) => acc + file.changes, 0);
+          
+          // Get max lines from input (default: 1000)
+          const maxLines = parseInt(process.env.MAX_LINES || '1000', 10);
+          
+          // Set outputs
+          core.setOutput('total_changes', totalChanges);
+          core.setOutput('is_valid', totalChanges <= maxLines);
+          
+          // Log the results
+          console.log(`PR Size Check Results:`);
+          console.log(`  Total lines changed: ${totalChanges}`);
+          console.log(`  Maximum allowed: ${maxLines}`);
+          console.log(`  Status: ${totalChanges <= maxLines ? '✅ PASS' : '❌ FAIL'}`);
+          
+          // Fail if PR is too large
+          if (totalChanges > maxLines) {
+            core.setFailed(`PR is too large (${totalChanges} lines > ${maxLines} lines). Please split into smaller PRs.`);
+          } else {
+            core.info(`✅ PR size is acceptable (${totalChanges} lines ≤ ${maxLines} lines)`);
+          }
+
+branding:
+  icon: 'check-circle'
+  color: 'green'
+
+# Made with Bob

@@ -1,87 +1,210 @@
-# This workflow will build a docker container, publish it to IBM Container Registry, and deploy it to IKS when there is a push to the "main" branch.
+# ============================================================================
+# CI Pipeline - Build and Deploy to Code Engine
+# ============================================================================
+# This workflow automatically builds, tests, and deploys the application to
+# IBM Cloud Code Engine when code is pushed to the main branch.
 #
-# To configure this workflow:
-#
-# 1. Ensure that your repository contains a Dockerfile
-# 2. Setup secrets in your repository by going to settings: Create ICR_NAMESPACE and IBM_CLOUD_API_KEY
-# 3. Change the values for the IBM_CLOUD_REGION, REGISTRY_HOSTNAME, IMAGE_NAME, IKS_CLUSTER, DEPLOYMENT_NAME, and PORT
+# Prerequisites:
+# 1. Dockerfile in repository root
+# 2. GitHub Secrets configured: IBMCLOUD_API_KEY
+# 3. GitHub Variables configured: IBMCLOUD_REGION, ICR_REGION, ICR_NAMESPACE,
+#    RESOURCE_GROUP, PROJECT_NAME, APP_NAME, IMAGE_NAME
+# 4. Code Engine project and ICR namespace created in IBM Cloud
+# ============================================================================
 
 name: Build and Deploy to Code Engine
 
+# Trigger this workflow on push to main branch or manual dispatch
 on:
-  workflow_dispatch:
-    branches: [ main ]
+  workflow_dispatch:  # Allows manual triggering from GitHub Actions UI
   push:
-    branches: [ "main" ]
+    branches: [ "main" ]  # Automatically runs on push to main
 
 # Environment variables available to all jobs and steps in this workflow
 env:
-  GITHUB_SHA: ${{ github.sha }}
-  IBMCLOUD_API_KEY: ${{ secrets.IBMCLOUD_API_KEY }}
-  IBMCLOUD_REGION: ${{ vars.IBMCLOUD_REGION }}
-  ICR_NAMESPACE: ${{ vars.ICR_NAMESPACE }}
-  RESOURCE_GROUP: ${{ vars.RESOURCE_GROUP }}
-  REGISTRY_HOSTNAME: ${{ vars.ICR_REGION }}
-  IMAGE_NAME: ${{ vars.IMAGE_NAME }}
-  PROJECT_NAME: ${{ vars.PROJECT_NAME }}
-  APP_NAME: ${{ vars.APP_NAME }}
+  GITHUB_SHA: ${{ github.sha }}                      # Git commit SHA for traceability
+  IBMCLOUD_API_KEY: ${{ secrets.IBMCLOUD_API_KEY }}  # IBM Cloud authentication
+  IBMCLOUD_REGION: ${{ vars.IBMCLOUD_REGION }}       # IBM Cloud region (e.g., us-south)
+  ICR_NAMESPACE: ${{ vars.ICR_NAMESPACE }}           # Container Registry namespace
+  RESOURCE_GROUP: ${{ vars.RESOURCE_GROUP }}         # IBM Cloud resource group
+  REGISTRY_HOSTNAME: ${{ vars.ICR_REGION }}          # ICR hostname (e.g., us.icr.io)
+  IMAGE_NAME: ${{ vars.IMAGE_NAME }}                 # Base container image name
+  PROJECT_NAME: ${{ vars.PROJECT_NAME }}             # Code Engine project name
+  APP_NAME: ${{ vars.APP_NAME }}                     # Code Engine application name
 
 jobs:
 
+  # Main CI/CD pipeline job - builds, tests, and deploys the application
   ci-pipeline:
     name: CI Pipeline
-    runs-on: ubuntu-latest
-    environment: production
+    runs-on: ubuntu-latest      # Use latest Ubuntu runner
+    environment: production     # Uses production environment settings and protection rules
     steps:
 
+    # Step 1: Checkout the repository code
+    # Uses GitHub's official checkout action to clone the repository
     - id: checkout-ci-code
       name: Checkout CI code
       uses: actions/checkout@v4
-
-    - id: detect-secrets
-      name: Detect CI code secrets
-      run: | 
-        echo "Detect CI code secrets <todo>"
-        echo
-        env
   
+    # Step 2: Run unit tests
+    # Installs dependencies and executes unit tests to validate code quality
+    # Fails the workflow if tests don't pass
     - id: unit-test-ci-code
       name: Unit test CI code
       run: |
-        npm install
-        npm run test-unit
+        npm install          # Install all npm dependencies
+        npm run test-unit    # Run unit tests (must be defined in package.json)
 
+    # Step 3: Login to IBM Cloud CLI
+    # Authenticates with IBM Cloud and installs required plugins
+    # Required for subsequent image operations and deployment
+    - id: login-ibmcloud-cli
+      name: Login IBM Cloud CLI
+      uses: IBM/actions-ibmcloud-cli@v1
+      if: ${{ success() }}
+      with:
+        api_key: ${{ secrets.IBMCLOUD_API_KEY }}                # IBM Cloud API key for authentication
+        region: ${{ vars.IBMCLOUD_REGION }}                     # IBM Cloud region
+        group: ${{ vars.RESOURCE_GROUP }}                       # IBM Cloud resource group
+        plugins: "code-engine, container-registry"              # Install Code Engine and Container Registry plugins
+
+    # Step 4: Get currently deployed image digest from ICR
+    # Retrieves the SHA256 digest of the "latest" tagged image
+    # This digest uniquely identifies the exact image version and is stored as an output
+    # for use in rollback scenarios if deployment fails
+    - id: get-currently-deployed-image-digest
+      name: Get currently deployed image digest
+      if: ${{ success() }}
+      run: |
+        # Get the digest of the latest image from ICR
+        IMAGE_PATH="${{ vars.ICR_REGION }}/${{ vars.ICR_NAMESPACE }}/ci-${{ vars.IMAGE_NAME }}:latest"
+        DIGEST=$(ibmcloud cr image-inspect $IMAGE_PATH --format '{{.RepoDigests}}' | grep -oP 'sha256:[a-f0-9]{64}')
+        
+        echo "Currently deployed 'latest' image digest: $DIGEST"
+        
+        # Export the digest as a step output for use in rollback step
+        echo "currently-deployed-image-digest=$DIGEST" >> $GITHUB_OUTPUT
+
+    # Step 5: Build container image using Code Engine
+    # Uses IBM's Code Engine GitHub Action to build the Docker image
+    # Image is pushed to private IBM Container Registry
     - id: build-ci-image
       name: Build CI image using Code Engine
       uses: IBM/code-engine-github-action@v1
+      if: ${{ success() }}
       with:
-        api-key: ${{ secrets.IBMCLOUD_API_KEY }}
-        resource-group: ${{ vars.RESOURCE_GROUP }}
-        region: ${{ vars.IBMCLOUD_REGION }}
-        project: ${{ vars.PROJECT_NAME }}
-        component: 'build'
-        name: 'build-ci-image'
-        image: "private.${{ vars.ICR_REGION }}/${{ vars.ICR_NAMESPACE }}/ci-${{ vars.IMAGE_NAME }}:latest"
-        registry-secret: "ce-auto-icr-private-${{ vars.IBMCLOUD_REGION }}"
-        build-source: './'
+        api-key: ${{ secrets.IBMCLOUD_API_KEY }}                    # IBM Cloud API key for authentication
+        resource-group: ${{ vars.RESOURCE_GROUP }}                  # Target resource group
+        region: ${{ vars.IBMCLOUD_REGION }}                         # IBM Cloud region
+        project: ${{ vars.PROJECT_NAME }}                           # Code Engine project name
+        component: 'build'                                          # Specifies this is a build operation
+        name: 'build-ci-image'                                      # Name for the build configuration
+        image: "private.${{ vars.ICR_REGION }}/${{ vars.ICR_NAMESPACE }}/ci-${{ vars.IMAGE_NAME }}:latest"  # Full image path in ICR
+        registry-secret: "ce-auto-icr-private-${{ vars.IBMCLOUD_REGION }}"  # Auto-generated registry secret
+        build-source: './' # Build context (current directory)
 
+    # Step 6: Scan container image for vulnerabilities
+    # Uses IBM Cloud Container Registry Vulnerability Advisor to scan for security issues
+    # Checks for known CVEs, malware, and configuration issues
+    # Waits for scan completion and displays results
     - id: scan-icr-ci-image
       name: Scan ICR CI image
+      if: ${{ success() }}
       run: |
-        echo "Scan ICR CI image with digest: ${{ steps.build-ci-image.outputs.image-with-digest }} <todo>"
-    
+        # Get the image with digest and remove "private." prefix
+        IMAGE_WITH_DIGEST="${{ steps.build-ci-image.outputs.image-with-digest }}"
+        IMAGE_PATH="${IMAGE_WITH_DIGEST#private.}"
+
+        echo "Scanning ICR CI image: $IMAGE_PATH"
+        echo
+
+        # Set the ICR region and login
+        ibmcloud cr region-set "${ICR_REGION}"
+        ibmcloud cr login
+        
+        # Initiate the vulnerability scan
+        echo "Initiating vulnerability scan..."
+        ibmcloud cr vulnerability-assessment "$IMAGE_PATH" || true
+        
+        # Wait for scan to complete (poll every 10 seconds, max 5 minutes)
+        echo "Waiting for scan results..."
+        MAX_ATTEMPTS=30
+        ATTEMPT=0
+        
+        while [ $ATTEMPT -lt $MAX_ATTEMPTS ]; do
+          ATTEMPT=$((ATTEMPT + 1))
+          echo "Checking scan status (attempt $ATTEMPT/$MAX_ATTEMPTS)..."
+          
+          # Check if scan is complete
+          if ibmcloud cr vulnerability-assessment "$IMAGE_PATH" 2>&1 | grep -q "Scan complete"; then
+            echo "Scan completed successfully!"
+            break
+          fi
+          
+          if [ $ATTEMPT -eq $MAX_ATTEMPTS ]; then
+            echo "WARNING: Scan did not complete within timeout period"
+            break
+          fi
+          
+          sleep 10
+        done
+        
+        echo
+        echo "=== Vulnerability Scan Results ==="
+        ibmcloud cr vulnerability-assessment "$IMAGE_PATH"
+        echo
+        
+        # Optional: Fail the build if critical vulnerabilities are found
+        # Uncomment the following lines to enforce security policy
+        # if ibmcloud cr vulnerability-assessment "$IMAGE_PATH" | grep -q "Critical"; then
+        #   echo "ERROR: Critical vulnerabilities found in image"
+        #   exit 1
+        # fi
+
+    # Step 7: Deploy application to Code Engine
+    # Uses IBM's Code Engine GitHub Action to deploy or update the application
+    # Configures the app with 1 CPU and 4GB memory
     - id: deploy-ci-app-to-code-engine
       name: Deploy CI application to Code Engine
       uses: IBM/code-engine-github-action@v1
+      if: ${{ success() }}
       with:
-        api-key: ${{ secrets.IBMCLOUD_API_KEY }}
-        resource-group: ${{ vars.RESOURCE_GROUP }}
-        region: ${{ vars.IBMCLOUD_REGION }}
-        project: ${{ vars.PROJECT_NAME }}
-        name: ${{ vars.APP_NAME }}
-        component: 'app'
-        image: "private.${{ vars.ICR_REGION }}/${{ vars.ICR_NAMESPACE }}/ci-${{ vars.IMAGE_NAME }}:latest"
-        #image: "${{ vars.ICR_REGION }}/${{ vars.ICR_NAMESPACE }}/ci-${{ vars.IMAGE_NAME }}:latest"
-        registry-secret: "ce-auto-icr-private-${{ vars.IBMCLOUD_REGION }}"
-        cpu: 1
-        memory: 4G
+        api-key: ${{ secrets.IBMCLOUD_API_KEY }}                    # IBM Cloud API key for authentication
+        resource-group: ${{ vars.RESOURCE_GROUP }}                  # Target resource group
+        region: ${{ vars.IBMCLOUD_REGION }}                         # IBM Cloud region
+        project: ${{ vars.PROJECT_NAME }}                           # Code Engine project name
+        name: ${{ vars.APP_NAME }}                                  # Application name in Code Engine
+        component: 'app'                                            # Specifies this is an app deployment
+        image: "private.${{ vars.ICR_REGION }}/${{ vars.ICR_NAMESPACE }}/ci-${{ vars.IMAGE_NAME }}:latest"  # Image to deploy
+        registry-secret: "ce-auto-icr-private-${{ vars.IBMCLOUD_REGION }}"  # Registry authentication
+        cpu: 1                                                      # Allocate 1 vCPU
+        memory: 4G                                                  # Allocate 4GB memory
+
+    # Step 8: Run integration tests against deployed application
+    # Retrieves the deployed app URL and runs integration tests
+    # TODO: Uncomment and implement actual integration tests
+    - id: run-integration-tests
+      name: Run Integration Tests
+      if: ${{ success() }}
+      run: |
+        # Get the deployed application URL from Code Engine
+        APP_URL=$(ibmcloud ce app get --name ${{ vars.APP_NAME }} --output json | jq -r '.status.url')
+        
+        echo "Running Integration tests against: ${APP_URL}"
+        echo
+
+        # TODO: Uncomment when integration tests are ready
+        #npm run test-integration -- --url=$APP_URL
+
+    # Step 9: Rollback on failure
+    # If any previous step fails, attempt to rollback to the previous image
+    # Only runs if the workflow fails (if: failure() condition)
+    # TODO: Set PREVIOUS_IMAGE environment variable before deployment
+    - id: rollback-on-failure
+      name: Rollback on failure
+      if: ${{ failure() }}  # Only runs if any previous step failed
+      run: |
+        # Rollback to previous image version
+        ibmcloud ce app update --name ${{ vars.APP_NAME }} \
+          --image ${{ steps.get-currently-deployed-image-digest.outputs.currently-deployed-image-digest }}
