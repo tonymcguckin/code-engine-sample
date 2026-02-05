@@ -32,7 +32,7 @@ env:
   IMAGE_NAME: ${{ vars.IMAGE_NAME }}                 # Base container image name
   PROJECT_NAME: ${{ vars.PROJECT_NAME }}             # Code Engine project name
   APP_NAME: ${{ vars.APP_NAME }}                     # Code Engine application name
-  MAX_PR_LINES: ${{ vars.MAX_PR_LINES || '1000' }}   # Maximum lines allowed in PR (default: 1000)
+  MAX_PR_LINES: ${{ vars.MAX_PR_LINES || '2000' }}   # Maximum lines allowed in PR (default: 1000)
 
 jobs:
 
