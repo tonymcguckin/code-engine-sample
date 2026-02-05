@@ -32,6 +32,7 @@ env:
   IMAGE_NAME: ${{ vars.IMAGE_NAME }}                 # Base container image name
   PROJECT_NAME: ${{ vars.PROJECT_NAME }}             # Code Engine project name
   APP_NAME: ${{ vars.APP_NAME }}                     # Code Engine application name
+  MAX_PR_LINES: ${{ vars.MAX_PR_LINES || '1000' }}   # Maximum lines allowed in PR (default: 1000)
 
 jobs:
 
@@ -43,11 +44,13 @@ jobs:
     steps:
 
     # Step 1: Check PR size to encourage smaller, reviewable PRs
-    # Fails if PR has more than 1000 lines of changes
+    # Fails if PR has more than MAX_PR_LINES lines of changes (default: 1000)
     # Helps maintain code review quality and reduces merge conflicts
     - id: check-pr-size
       name: Check PR size
       uses: actions/github-script@v6  # Uses GitHub's script action for API access
+      env:
+        MAX_PR_LINES: ${{ env.MAX_PR_LINES }}
       with:
         script: |
           // Fetch all files changed in this PR
@@ -58,9 +61,11 @@ jobs:
           });
           // Calculate total lines changed (additions + deletions)
           const totalChanges = files.reduce((acc, file) => acc + file.changes, 0);
-          // Fail if PR is too large (>1000 lines)
-          if (totalChanges > 1000) {
-            core.setFailed('PR is too large (>1000 lines). Please split into smaller PRs.');
+          // Get max lines from environment variable (default: 1000)
+          const maxLines = parseInt(process.env.MAX_PR_LINES || '1000', 10);
+          // Fail if PR is too large
+          if (totalChanges > maxLines) {
+            core.setFailed(`PR is too large (${totalChanges} lines > ${maxLines} lines). Please split into smaller PRs.`);
           }
 
     # Step 2: Checkout the PR branch code
