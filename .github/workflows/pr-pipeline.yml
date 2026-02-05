@@ -44,29 +44,15 @@ jobs:
     steps:
 
     # Step 1: Check PR size to encourage smaller, reviewable PRs
+    # Uses custom composite action to validate PR size
     # Fails if PR has more than MAX_PR_LINES lines of changes (default: 1000)
     # Helps maintain code review quality and reduces merge conflicts
     - id: check-pr-size
       name: Check PR size
-      uses: actions/github-script@v6  # Uses GitHub's script action for API access
-      env:
-        MAX_PR_LINES: ${{ env.MAX_PR_LINES }}
+      uses: ./.github/actions/check-pr-size
       with:
-        script: |
-          // Fetch all files changed in this PR
-          const { data: files } = await github.rest.pulls.listFiles({
-            owner: context.repo.owner,
-            repo: context.repo.repo,
-            pull_number: context.issue.number
-          });
-          // Calculate total lines changed (additions + deletions)
-          const totalChanges = files.reduce((acc, file) => acc + file.changes, 0);
-          // Get max lines from environment variable (default: 1000)
-          const maxLines = parseInt(process.env.MAX_PR_LINES || '1000', 10);
-          // Fail if PR is too large
-          if (totalChanges > maxLines) {
-            core.setFailed(`PR is too large (${totalChanges} lines > ${maxLines} lines). Please split into smaller PRs.`);
-          }
+        max_lines: ${{ env.MAX_PR_LINES }}
+        github_token: ${{ github.token }}
 
     # Step 2: Checkout the PR branch code
     # Uses GitHub's official checkout action to clone the PR branch

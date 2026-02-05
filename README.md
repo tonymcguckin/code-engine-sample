@@ -14,7 +14,7 @@ This project showcases a complete CI/CD pipeline that automatically builds, test
 - ✅ Automated unit testing
 - 🔍 Container vulnerability scanning with IBM Vulnerability Advisor
 - 🧹 Automatic cleanup of temporary PR images
-- 📊 PR size validation to encourage reviewable changes
+- 📊 PR size validation to encourage reviewable changes (reusable action)
 - ✅ Automated commit status updates in GitHub PRs
 
 ## Prerequisites
@@ -59,6 +59,33 @@ Ensure your repository contains:
 - `Dockerfile` - Container build instructions
 - `package.json` - With `test-unit` script defined
 - Application source code
+
+## Custom GitHub Actions
+
+This project includes reusable composite actions:
+
+### Check PR Size Action
+
+A self-contained action that validates pull request size.
+
+**Location**: `.github/actions/check-pr-size/`
+
+**Features**:
+- Configurable line limit (default: 1000)
+- Outputs total changes and validation status
+- Clear console output with pass/fail status
+- Easy to integrate into any workflow
+
+**Usage**:
+```yaml
+- name: Check PR Size
+  uses: ./.github/actions/check-pr-size
+  with:
+    max_lines: 1000
+    github_token: ${{ github.token }}
+```
+
+📖 **[View Action Documentation](.github/actions/check-pr-size/README.md)**
 
 ## CI/CD Pipelines
 
