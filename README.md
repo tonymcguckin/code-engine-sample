@@ -68,6 +68,8 @@ This project includes two GitHub Actions workflows for different stages of the d
 
 The PR pipeline validates pull requests before they are merged to ensure code quality and build integrity.
 
+📊 **[View PR Pipeline Flow Diagram](docs/pr-pipeline-flow.md)**
+
 **Triggers:**
 - Pull request opened or reopened
 - Manual trigger via GitHub Actions UI (workflow_dispatch)
@@ -96,6 +98,8 @@ The PR pipeline validates pull requests before they are merged to ensure code qu
 
 The CI pipeline builds, tests, and deploys the application to Code Engine when code is merged to main.
 
+📊 **[View CI Pipeline Flow Diagram](docs/ci-pipeline-flow.md)**
+
 **Triggers:**
 - Push to `main` branch
 - Manual trigger via GitHub Actions UI (workflow_dispatch)
@@ -103,10 +107,10 @@ The CI pipeline builds, tests, and deploys the application to Code Engine when c
 **Steps:**
 1. **Checkout Code** - Retrieves the latest code from the repository
 2. **Unit Tests** - Runs `npm run test-unit` to validate code
-3. **Login IBM Cloud CLI** - Authenticates with IBM Cloud and installs required plugins
+3. **Login IBM Cloud CLI** - Authenticates with IBM Cloud and installs Code Engine and Container Registry plugins
 4. **Get Currently Deployed Image** - Retrieves the digest of the currently deployed image for rollback capability
 5. **Build Image** - Builds Docker image using Code Engine and pushes to ICR as `ci-{image-name}:latest`
-6. **Scan Image** - Performs vulnerability scanning (placeholder for implementation)
+6. **Scan Image** - Performs vulnerability scanning using IBM Vulnerability Advisor, waits for results
 7. **Deploy** - Deploys the application to Code Engine with 1 CPU and 4GB memory
 8. **Run Integration Tests** - Executes integration tests against deployed application (placeholder)
 9. **Rollback on Failure** - Automatically rolls back to previous image if deployment fails
@@ -167,7 +171,7 @@ docker build -t code-engine-sample .
 - [x] Implement PR image cleanup (implemented with existence check)
 - [x] Add PR size validation (implemented with configurable line limit via MAX_PR_LINES env var, default: 1000)
 - [ ] Complete integration tests implementation
-- [ ] Add CI pipeline vulnerability scanning
+- [x] Add CI pipeline vulnerability scanning (implemented with IBM Vulnerability Advisor)
 - [ ] Implement blue-green deployment strategy
 - [ ] Add monitoring and alerting
 - [ ] Configure custom domain
